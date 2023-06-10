@@ -90,6 +90,16 @@ pub fn check_specific_dependency_version_usage(
                 &cargo_toml_member_map,
                 forbidden_dependency_logic_symbols,
             );
+            check_version_on_specific_usage_two(
+                member,
+                "dependencies",
+                &cargo_toml_member_map,
+            );
+            check_version_on_specific_usage_two(
+                member,
+                "dev-dependencies",
+                &cargo_toml_member_map,
+            );
             is_logic_executed = true;
         });
     if let false = is_logic_executed {
@@ -128,6 +138,68 @@ fn check_version_on_specific_usage(
                     panic!("{crate_name} crate_value is not a toml::Value::Table {member}");
                 }
             });
+        } else {
+            panic!("no {key} in cargo_toml_member_map of {member}");
+        }
+    }
+}
+
+fn check_version_on_specific_usage_two(
+    member: &String,
+    key: &str,
+    cargo_toml_member_map: &toml::map::Map<String, toml::Value>,
+) {
+    if let Some(toml_member_table_map_value) = cargo_toml_member_map.get(key) {
+        if let toml::Value::Table(toml_member_table_dependencies_map) = toml_member_table_map_value
+        {
+            let unspecified_dependencies = toml_member_table_dependencies_map
+            .iter()
+            .filter(|(crate_name, crate_value)| {
+                if let toml::Value::Table(crate_value_map) = crate_value {
+                    if let Some(version_value) = crate_value_map.get("version") {
+                        if let toml::Value::String(version) = version_value {
+                            !version.contains('=')
+                        }
+                        else {
+                            panic!("{crate_name} version_value is not a toml::Value::String {member}");
+                        }
+                    }
+                    else {
+                        false
+                    }
+                }
+                else {
+                    panic!("{crate_name} crate_value is not a toml::Value::Table {member}");
+                }
+            })
+            .map(|(crate_name, crate_value)|{
+                if let toml::Value::Table(crate_value_map) = crate_value {
+                    if let Some(version_value) = crate_value_map.get("version") {
+                        if let toml::Value::String(version) = version_value {
+                            format!("{member} {crate_name} {version}")
+                        }
+                        else {
+                            panic!("{crate_name} version_value is not a toml::Value::String {member}");
+                        }
+                    }
+                    else {
+                        panic!("this must be unreachable");
+                    }
+                }
+                else {
+                    panic!("{crate_name} crate_value is not a toml::Value::Table {member}");
+                }
+            })
+            .collect::<Vec<std::string::String>>();
+            if let false = unspecified_dependencies.is_empty() {
+                let mut error_message = std::string::String::from("unspecified_dependencies: ");
+                unspecified_dependencies
+                    .iter()
+                    .for_each(|unspecified_dependency| {
+                        error_message.push_str(&format!("\n{unspecified_dependency}"));
+                    });
+                println!("{error_message}");
+            }
         } else {
             panic!("no {key} in cargo_toml_member_map of {member}");
         }
