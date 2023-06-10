@@ -54,7 +54,7 @@ pub fn check_specific_dependency_version_usage(
     } else {
         panic!("no workspace in toml_table_map");
     };
-    let forbidden_dependency_logic_symbols = ['>', '<', '*', '~'];
+    let forbidden_dependency_logic_symbols = ['>', '<', '*', '~', '^'];
     toml_table_workspace_members_map_vec
         .iter()
         .for_each(|member| {
@@ -95,7 +95,7 @@ fn check_version_on_specific_usage(
     member: &String,
     key: &str,
     cargo_toml_member_map: &toml::map::Map<String, toml::Value>,
-    forbidden_dependency_logic_symbols: [char; 4],
+    forbidden_dependency_logic_symbols: [char; 5],
 ) {
     if let Some(toml_member_table_map_value) = cargo_toml_member_map.get(key) {
         if let toml::Value::Table(toml_member_table_dependencies_map) = toml_member_table_map_value
