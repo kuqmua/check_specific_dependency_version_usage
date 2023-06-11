@@ -55,11 +55,11 @@ pub fn check_specific_dependency_version_usage(
         panic!("no workspace in toml_table_map");
     };
     let forbidden_dependency_logic_symbols = ['>', '<', '*', '~', '^'];
-    let toml_keys = ["dependencies", "dev-dependencies"];
+    let toml_keys = ["dependencies", "dev-dependencies", "build-dependencies"];
     let mut is_logic_executed = true;
-    toml_table_workspace_members_map_vec
+    let unspecified_dependencies = toml_table_workspace_members_map_vec
         .iter()
-        .for_each(|member| {
+        .fold(Vec::new(), |mut acc, member| {
             let path_to_cargo_toml_member = format!("{member}/{cargo_toml}");
             let mut buf_reader_member = std::io::BufReader::new(
                 std::fs::File::open(std::path::Path::new(&path_to_cargo_toml_member))
@@ -80,70 +80,64 @@ pub fn check_specific_dependency_version_usage(
                 panic!("cannot parse::<toml::Table>() cargo_toml_member_content for {member} {file_error}\"{e}\"")
             });
             toml_keys.iter().for_each(|toml_key|{
-                check_version_on_specific_usage(
-                    member,
-                    toml_key,
-                    &cargo_toml_member_map,
-                    forbidden_dependency_logic_symbols,
-                );
+                let f = if let Some(toml_member_table_map_value) = cargo_toml_member_map.get(*toml_key) {
+                    if let toml::Value::Table(toml_member_table_dependencies_map) = toml_member_table_map_value {
+                        toml_member_table_dependencies_map
+                        .iter()
+                        .filter_map(|(crate_name, crate_value)| {
+                            if let toml::Value::Table(crate_value_map) = crate_value {
+                                if let Some(version_value) = crate_value_map.get("version") {
+                                    if let toml::Value::String(version) = version_value {
+                                        forbidden_dependency_logic_symbols.iter().for_each(|symbol|{
+                                            if let true = version.contains(*symbol) {
+                                                panic!("{crate_name} version of {member} contains forbidden symbol {symbol}");
+                                            }
+                                        });
+                                        match version.starts_with('=') {
+                                            true => None,
+                                            false => Some(format!("{member} {toml_key} {crate_name} {version}")),
+                                        }
+                                    }
+                                    else {
+                                        panic!("{crate_name} version_value is not a toml::Value::String {member}");
+                                    }
+                                }
+                                else {
+                                    None
+                                }
+                            }
+                            else {
+                                panic!("{crate_name} crate_value is not a toml::Value::Table {member}");
+                            }
+                        })
+                        .collect::<Vec<std::string::String>>()
+                    } else {
+                        panic!("no {toml_key} in cargo_toml_member_map of {member}");
+                    }
+                } else {
+                    Vec::new()
+                };
+                f.into_iter().for_each(|g|{
+                    acc.push(g);
+                });
             });
             is_logic_executed = true;
+            acc
         });
     if let false = is_logic_executed {
         panic!("logic is not executed, please check tokenized crate name(input parameter for check_specific_dependency_version_usage!(HERE)");
     }
-    quote::quote! {}.into()
-}
-
-fn check_version_on_specific_usage(
-    member: &String,
-    key: &str,
-    cargo_toml_member_map: &toml::map::Map<String, toml::Value>,
-    forbidden_dependency_logic_symbols: [char; 5],
-) {
-    if let Some(toml_member_table_map_value) = cargo_toml_member_map.get(key) {
-        if let toml::Value::Table(toml_member_table_dependencies_map) = toml_member_table_map_value
-        {
-            let unspecified_dependencies = toml_member_table_dependencies_map
+    if let false = unspecified_dependencies.is_empty() {
+        let mut error_message = std::string::String::from(
+            "must use concrete versions with '=' symbol(like \"=1.2.3\") for: ",
+        );
+        unspecified_dependencies
             .iter()
-            .filter_map(|(crate_name, crate_value)| {
-                if let toml::Value::Table(crate_value_map) = crate_value {
-                    if let Some(version_value) = crate_value_map.get("version") {
-                        if let toml::Value::String(version) = version_value {
-                            forbidden_dependency_logic_symbols.iter().for_each(|symbol|{
-                                if let true = version.contains(*symbol) {
-                                    panic!("{crate_name} version of {member} contains forbidden symbol {symbol}");
-                                }
-                            });
-                            match version.starts_with('=') {
-                                true => None,
-                                false => Some(format!("{member} {crate_name} {version}")),
-                            }
-                        }
-                        else {
-                            panic!("{crate_name} version_value is not a toml::Value::String {member}");
-                        }
-                    }
-                    else {
-                        None
-                    }
-                }
-                else {
-                    panic!("{crate_name} crate_value is not a toml::Value::Table {member}");
-                }
-            })
-            .collect::<Vec<std::string::String>>();
-            if let false = unspecified_dependencies.is_empty() {
-                let mut error_message = std::string::String::from("unspecified_dependencies: ");
-                unspecified_dependencies
-                    .iter()
-                    .for_each(|unspecified_dependency| {
-                        error_message.push_str(&format!("\n{unspecified_dependency}"));
-                    });
-                panic!("{error_message}");
-            }
-        } else {
-            panic!("no {key} in cargo_toml_member_map of {member}");
-        }
+            .enumerate()
+            .for_each(|(index, unspecified_dependency)| {
+                error_message.push_str(&format!("\n{}. {unspecified_dependency}", index + 1));
+            });
+        panic!("{error_message}\nMORE INFORMATION: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html");
     }
+    quote::quote! {}.into()
 }
