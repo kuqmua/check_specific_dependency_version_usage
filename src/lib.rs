@@ -1,6 +1,6 @@
 #[proc_macro]
 pub fn check_specific_dependency_version_usage(
-    crate_name_token_stream: proc_macro::TokenStream,
+    _token_stream: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     proc_macro_helpers::panic_location::panic_location();
     let cargo_toml = "Cargo.toml";
@@ -55,11 +55,9 @@ pub fn check_specific_dependency_version_usage(
         panic!("no workspace in toml_table_map");
     };
     let forbidden_dependency_logic_symbols = ['>', '<', '*', '~', '^'];
-    let crate_name_token_stream_stringified = crate_name_token_stream.to_string();
     let mut is_logic_executed = true;
     toml_table_workspace_members_map_vec
         .iter()
-        .filter(|member|member.contains(&crate_name_token_stream_stringified))
         .for_each(|member| {
             let path_to_cargo_toml_member = format!("{member}/{cargo_toml}");
             let mut buf_reader_member = std::io::BufReader::new(
@@ -78,24 +76,24 @@ pub fn check_specific_dependency_version_usage(
                 });
             }
             let cargo_toml_member_map = cargo_toml_member_content.parse::<toml::Table>().unwrap();
-            check_version_on_specific_usage(
+            check_version_on_forbidden_dependency_logic_symbols(
                 member,
                 "dependencies",
                 &cargo_toml_member_map,
                 forbidden_dependency_logic_symbols,
             );
-            check_version_on_specific_usage(
+            check_version_on_forbidden_dependency_logic_symbols(
                 member,
                 "dev-dependencies",
                 &cargo_toml_member_map,
                 forbidden_dependency_logic_symbols,
             );
-            check_version_on_specific_usage_two(
+            check_version_on_specific_usage(
                 member,
                 "dependencies",
                 &cargo_toml_member_map,
             );
-            check_version_on_specific_usage_two(
+            check_version_on_specific_usage(
                 member,
                 "dev-dependencies",
                 &cargo_toml_member_map,
@@ -108,7 +106,7 @@ pub fn check_specific_dependency_version_usage(
     quote::quote! {}.into()
 }
 
-fn check_version_on_specific_usage(
+fn check_version_on_forbidden_dependency_logic_symbols(
     member: &String,
     key: &str,
     cargo_toml_member_map: &toml::map::Map<String, toml::Value>,
@@ -144,7 +142,7 @@ fn check_version_on_specific_usage(
     }
 }
 
-fn check_version_on_specific_usage_two(
+fn check_version_on_specific_usage(
     member: &String,
     key: &str,
     cargo_toml_member_map: &toml::map::Map<String, toml::Value>,
@@ -198,7 +196,7 @@ fn check_version_on_specific_usage_two(
                     .for_each(|unspecified_dependency| {
                         error_message.push_str(&format!("\n{unspecified_dependency}"));
                     });
-                println!("{error_message}");
+                panic!("{error_message}");
             }
         } else {
             panic!("no {key} in cargo_toml_member_map of {member}");
