@@ -55,6 +55,7 @@ pub fn check_specific_dependency_version_usage(
         panic!("no workspace in toml_table_map");
     };
     let forbidden_dependency_logic_symbols = ['>', '<', '*', '~', '^'];
+    let toml_keys = ["dependencies", "dev-dependencies"];
     let mut is_logic_executed = true;
     toml_table_workspace_members_map_vec
         .iter()
@@ -75,29 +76,17 @@ pub fn check_specific_dependency_version_usage(
                     panic!("cannot read_to_string from {path_to_cargo_toml_member}{file_error}\"{e}\"")
                 });
             }
-            let cargo_toml_member_map = cargo_toml_member_content.parse::<toml::Table>().unwrap();
-            check_version_on_forbidden_dependency_logic_symbols(
-                member,
-                "dependencies",
-                &cargo_toml_member_map,
-                forbidden_dependency_logic_symbols,
-            );
-            check_version_on_forbidden_dependency_logic_symbols(
-                member,
-                "dev-dependencies",
-                &cargo_toml_member_map,
-                forbidden_dependency_logic_symbols,
-            );
-            check_version_on_specific_usage(
-                member,
-                "dependencies",
-                &cargo_toml_member_map,
-            );
-            check_version_on_specific_usage(
-                member,
-                "dev-dependencies",
-                &cargo_toml_member_map,
-            );
+            let cargo_toml_member_map = cargo_toml_member_content.parse::<toml::Table>().unwrap_or_else(|e| {
+                panic!("cannot parse::<toml::Table>() cargo_toml_member_content for {member} {file_error}\"{e}\"")
+            });
+            toml_keys.iter().for_each(|toml_key|{
+                check_version_on_specific_usage(
+                    member,
+                    toml_key,
+                    &cargo_toml_member_map,
+                    forbidden_dependency_logic_symbols,
+                );
+            });
             is_logic_executed = true;
         });
     if let false = is_logic_executed {
@@ -106,7 +95,7 @@ pub fn check_specific_dependency_version_usage(
     quote::quote! {}.into()
 }
 
-fn check_version_on_forbidden_dependency_logic_symbols(
+fn check_version_on_specific_usage(
     member: &String,
     key: &str,
     cargo_toml_member_map: &toml::map::Map<String, toml::Value>,
@@ -115,9 +104,9 @@ fn check_version_on_forbidden_dependency_logic_symbols(
     if let Some(toml_member_table_map_value) = cargo_toml_member_map.get(key) {
         if let toml::Value::Table(toml_member_table_dependencies_map) = toml_member_table_map_value
         {
-            toml_member_table_dependencies_map
+            let unspecified_dependencies = toml_member_table_dependencies_map
             .iter()
-            .for_each(|(crate_name, crate_value)| {
+            .filter_map(|(crate_name, crate_value)| {
                 if let toml::Value::Table(crate_value_map) = crate_value {
                     if let Some(version_value) = crate_value_map.get("version") {
                         if let toml::Value::String(version) = version_value {
@@ -126,62 +115,17 @@ fn check_version_on_forbidden_dependency_logic_symbols(
                                     panic!("{crate_name} version of {member} contains forbidden symbol {symbol}");
                                 }
                             });
-                        }
-                        else {
-                            panic!("{crate_name} version_value is not a toml::Value::String {member}");
-                        }
-                    }
-                }
-                else {
-                    panic!("{crate_name} crate_value is not a toml::Value::Table {member}");
-                }
-            });
-        } else {
-            panic!("no {key} in cargo_toml_member_map of {member}");
-        }
-    }
-}
-
-fn check_version_on_specific_usage(
-    member: &String,
-    key: &str,
-    cargo_toml_member_map: &toml::map::Map<String, toml::Value>,
-) {
-    if let Some(toml_member_table_map_value) = cargo_toml_member_map.get(key) {
-        if let toml::Value::Table(toml_member_table_dependencies_map) = toml_member_table_map_value
-        {
-            let unspecified_dependencies = toml_member_table_dependencies_map
-            .iter()
-            .filter(|(crate_name, crate_value)| {
-                if let toml::Value::Table(crate_value_map) = crate_value {
-                    if let Some(version_value) = crate_value_map.get("version") {
-                        if let toml::Value::String(version) = version_value {
-                            !version.contains('=')
+                            match version.starts_with('=') {
+                                true => None,
+                                false => Some(format!("{member} {crate_name} {version}")),
+                            }
                         }
                         else {
                             panic!("{crate_name} version_value is not a toml::Value::String {member}");
                         }
                     }
                     else {
-                        false
-                    }
-                }
-                else {
-                    panic!("{crate_name} crate_value is not a toml::Value::Table {member}");
-                }
-            })
-            .map(|(crate_name, crate_value)|{
-                if let toml::Value::Table(crate_value_map) = crate_value {
-                    if let Some(version_value) = crate_value_map.get("version") {
-                        if let toml::Value::String(version) = version_value {
-                            format!("{member} {crate_name} {version}")
-                        }
-                        else {
-                            panic!("{crate_name} version_value is not a toml::Value::String {member}");
-                        }
-                    }
-                    else {
-                        panic!("this must be unreachable");
+                        None
                     }
                 }
                 else {
