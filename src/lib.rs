@@ -12,9 +12,7 @@ pub fn check_specific_dependency_version_usage(
     );
     let mut cargo_toml_workspace_content = String::new();
     {
-        use std::io::Read;
-        buf_reader
-            .read_to_string(&mut cargo_toml_workspace_content)
+        std::io::Read::read_to_string(&mut buf_reader, &mut cargo_toml_workspace_content)
             .unwrap_or_else(|e| {
                 panic!("cannot read_to_string from {cargo_toml}{file_error}\"{e}\"")
             });
@@ -69,9 +67,10 @@ pub fn check_specific_dependency_version_usage(
             );
             let mut cargo_toml_member_content = String::new();
             {
-                use std::io::Read;
-                buf_reader_member
-                .read_to_string(&mut cargo_toml_member_content)
+                std::io::Read::read_to_string(
+                    &mut buf_reader_member,
+                    &mut cargo_toml_member_content
+                )
                 .unwrap_or_else(|e| {
                     panic!("cannot read_to_string from {path_to_cargo_toml_member}{file_error}\"{e}\"")
                 });
